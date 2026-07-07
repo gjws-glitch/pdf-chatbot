@@ -1,56 +1,58 @@
 """
-PDF Summarizer Chatbot - Streamlit App
-========================================
+PDF Summarizer Chatbot - Streamlit App (Google Gemini / Google AI Studio)
+==========================================================================
 Aplikasi ini memungkinkan pengguna untuk:
 1. Upload file PDF
 2. Merangkum isi PDF secara otomatis
 3. Chat / tanya jawab tentang isi PDF tersebut
 
+Menggunakan Google Gemini API (didapat gratis dari Google AI Studio:
+https://aistudio.google.com/apikey)
+
 Cara menjalankan:
-    pip install streamlit pypdf anthropic
-    streamlit run pdf_chatbot.py
+    pip install streamlit pypdf google-genai
+    streamlit run pdf_chatbot_gemini.py
 
 Catatan:
-- Aplikasi ini menggunakan Anthropic API (Claude) untuk membuat ringkasan
-  dan menjawab pertanyaan. Anda perlu memasukkan API key Anthropic di sidebar
-  (dapatkan di https://console.anthropic.com/).
+- Masukkan API Key dari Google AI Studio di sidebar aplikasi.
+- Library resmi yang dipakai adalah 'google-genai' (SDK terbaru Google),
+  bukan 'google-generativeai' yang sudah deprecated.
 """
 
 import streamlit as st
 from pypdf import PdfReader
-import anthropic
+from google import genai
 import io
 
 # ----------------------------
 # Konfigurasi halaman
 # ----------------------------
-st.set_page_config(page_title="Chatbot Rangkuman PDF", page_icon="📄", layout="wide")
+st.set_page_config(page_title="Chatbot Rangkuman PDF (Gemini)", page_icon="📄", layout="wide")
 
-st.title("📄 Chatbot Rangkuman PDF")
-st.caption("Upload PDF, dapatkan ringkasan otomatis, dan tanya jawab tentang isinya.")
+st.title("📄 Chatbot Rangkuman PDF — Google Gemini")
+st.caption("Upload PDF, dapatkan ringkasan otomatis, dan tanya jawab tentang isinya menggunakan API Google AI Studio.")
 
 # ----------------------------
 # Sidebar: API Key & Pengaturan
 # ----------------------------
 with st.sidebar:
     st.header("⚙️ Pengaturan")
-
-    try:
-        api_key = st.secrets["ANTHROPIC_API_KEY"]
-        st.success("✅ API Key berhasil dimuat")
-    except KeyError:
-        st.error("❌ API Key belum disimpan di Streamlit Secrets")
-        st.stop()
+    api_key = st.text_input(
+        "Google AI Studio API Key",
+        type="password",
+        help="Dapatkan API key gratis di https://aistudio.google.com/apikey",
+    )
     model_name = st.selectbox(
-        "Model",
-        options=["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+        "Model Gemini",
+        options=["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
         index=0,
+        help="gemini-2.5-flash cepat & hemat kuota, gemini-2.5-pro lebih akurat untuk dokumen kompleks.",
     )
     max_chars = st.slider(
         "Maksimum karakter teks PDF yang diproses",
         min_value=5000,
-        max_value=100000,
-        value=40000,
+        max_value=150000,
+        value=50000,
         step=5000,
         help="Batasi jumlah teks yang dikirim ke model agar tidak melebihi batas konteks.",
     )
@@ -85,15 +87,14 @@ def extract_text_from_pdf(uploaded_file) -> str:
     return "\n".join(text_parts)
 
 
-def call_claude(client, model, system_prompt, user_prompt):
-    """Panggil Anthropic API dan kembalikan teks respons."""
-    response = client.messages.create(
+def call_gemini(api_key: str, model: str, prompt: str) -> str:
+    """Panggil Google Gemini API (Google AI Studio) dan kembalikan teks respons."""
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
         model=model,
-        max_tokens=1500,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
+        contents=prompt,
     )
-    return "".join(block.text for block in response.content if block.type == "text")
+    return response.text
 
 
 # ----------------------------
@@ -122,23 +123,20 @@ if st.session_state.pdf_text:
 
     if summarize_clicked:
         if not api_key:
-            st.warning("Masukkan Anthropic API Key di sidebar terlebih dahulu.")
+            st.warning("Masukkan Google AI Studio API Key di sidebar terlebih dahulu.")
         else:
             with st.spinner("Membuat ringkasan..."):
                 try:
-                    client = anthropic.Anthropic(api_key=api_key)
                     text_to_send = st.session_state.pdf_text[:max_chars]
-                    system_prompt = (
+                    prompt = (
                         "Anda adalah asisten yang ahli merangkum dokumen. "
                         "Buat ringkasan yang jelas, terstruktur, dan mudah dipahami "
                         "dalam Bahasa Indonesia. Gunakan poin-poin untuk ide utama, "
-                        "dan sertakan kesimpulan singkat di akhir."
-                    )
-                    user_prompt = (
+                        "dan sertakan kesimpulan singkat di akhir.\n\n"
                         f"Berikut adalah isi dokumen PDF:\n\n{text_to_send}\n\n"
                         "Tolong buatkan ringkasan dari dokumen di atas."
                     )
-                    summary = call_claude(client, model_name, system_prompt, user_prompt)
+                    summary = call_gemini(api_key, model_name, prompt)
 
                     st.session_state.messages.append(
                         {"role": "assistant", "content": f"**Ringkasan PDF '{st.session_state.pdf_name}':**\n\n{summary}"}
@@ -167,7 +165,7 @@ if user_question:
     if not st.session_state.pdf_text:
         st.warning("Silakan upload PDF terlebih dahulu.")
     elif not api_key:
-        st.warning("Masukkan Anthropic API Key di sidebar terlebih dahulu.")
+        st.warning("Masukkan Google AI Studio API Key di sidebar terlebih dahulu.")
     else:
         st.session_state.messages.append({"role": "user", "content": user_question})
         with st.chat_message("user"):
@@ -176,29 +174,25 @@ if user_question:
         with st.chat_message("assistant"):
             with st.spinner("Berpikir..."):
                 try:
-                    client = anthropic.Anthropic(api_key=api_key)
                     text_context = st.session_state.pdf_text[:max_chars]
-
-                    system_prompt = (
-                        "Anda adalah asisten yang menjawab pertanyaan berdasarkan isi "
-                        "dokumen PDF yang diberikan. Jawablah dalam Bahasa Indonesia "
-                        "dengan jelas dan akurat berdasarkan konteks dokumen. "
-                        "Jika jawabannya tidak ada dalam dokumen, katakan dengan jujur "
-                        "bahwa informasi tersebut tidak ditemukan dalam dokumen."
-                    )
 
                     # Sertakan riwayat percakapan singkat sebagai konteks tambahan
                     history_snippet = "\n".join(
                         f"{m['role']}: {m['content']}" for m in st.session_state.messages[-6:-1]
                     )
 
-                    user_prompt = (
+                    prompt = (
+                        "Anda adalah asisten yang menjawab pertanyaan berdasarkan isi "
+                        "dokumen PDF yang diberikan. Jawablah dalam Bahasa Indonesia "
+                        "dengan jelas dan akurat berdasarkan konteks dokumen. "
+                        "Jika jawabannya tidak ada dalam dokumen, katakan dengan jujur "
+                        "bahwa informasi tersebut tidak ditemukan dalam dokumen.\n\n"
                         f"Isi dokumen PDF:\n\n{text_context}\n\n"
                         f"Riwayat percakapan sebelumnya:\n{history_snippet}\n\n"
                         f"Pertanyaan pengguna: {user_question}"
                     )
 
-                    answer = call_claude(client, model_name, system_prompt, user_prompt)
+                    answer = call_gemini(api_key, model_name, prompt)
                     st.markdown(answer)
                     st.session_state.messages.append({"role": "assistant", "content": answer})
                 except Exception as e:
