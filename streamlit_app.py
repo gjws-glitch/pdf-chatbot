@@ -9,12 +9,26 @@ Aplikasi ini memungkinkan pengguna untuk:
 Menggunakan Google Gemini API (didapat gratis dari Google AI Studio:
 https://aistudio.google.com/apikey)
 
-Cara menjalankan:
+Cara menjalankan (LOKAL):
     pip install streamlit pypdf google-genai
+    Buat file .streamlit/secrets.toml berisi:
+        GEMINI_API_KEY = "AIzaSy...punya_kamu"
+    Lalu jalankan:
     streamlit run pdf_chatbot_gemini.py
 
-Catatan:
-- Masukkan API Key dari Google AI Studio di sidebar aplikasi.
+Cara deploy ke Streamlit Community Cloud (share.streamlit.io):
+    1. Push kode ini ke GitHub (JANGAN ikut push file secrets.toml!)
+    2. Deploy di https://share.streamlit.io
+    3. Di menu App -> Settings -> Secrets, tempel:
+        GEMINI_API_KEY = "AIzaSy...punya_kamu"
+    4. Orang lain yang membuka link aplikasi TIDAK perlu masukkan API key sendiri.
+
+Catatan penting:
+- API key TIDAK ditanam langsung di kode (supaya tidak bocor kalau kode di-share
+  atau diupload ke GitHub), melainkan disimpan terpisah lewat Streamlit Secrets.
+- Karena semua pengguna memakai API key yang sama (milik kamu), pertimbangkan
+  batas pemakaian (lihat MAX_CHARS di bawah) agar kuota/biaya tidak jebol jika
+  aplikasi dipakai banyak orang sekaligus.
 - Library resmi yang dipakai adalah 'google-genai' (SDK terbaru Google),
   bukan 'google-generativeai' yang sudah deprecated.
 """
@@ -30,18 +44,27 @@ import io
 st.set_page_config(page_title="Chatbot Rangkuman PDF (Gemini)", page_icon="📄", layout="wide")
 
 st.title("📄 Chatbot Rangkuman PDF — Google Gemini")
-st.caption("Upload PDF, dapatkan ringkasan otomatis, dan tanya jawab tentang isinya menggunakan API Google AI Studio.")
+st.caption("Upload PDF, dapatkan ringkasan otomatis, dan tanya jawab tentang isinya.")
 
 # ----------------------------
-# Sidebar: API Key & Pengaturan
+# Ambil API Key dari Streamlit Secrets (bukan dari input user)
+# ----------------------------
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    api_key = None
+    st.error(
+        "⚠️ API Key belum diatur oleh admin aplikasi. "
+        "Tambahkan GEMINI_API_KEY di .streamlit/secrets.toml (lokal) "
+        "atau menu Secrets (Streamlit Cloud)."
+    )
+    st.stop()
+
+# ----------------------------
+# Sidebar: Pengaturan (tanpa input API key)
 # ----------------------------
 with st.sidebar:
     st.header("⚙️ Pengaturan")
-    api_key = st.text_input(
-        "Google AI Studio API Key",
-        type="password",
-        help="Dapatkan API key gratis di https://aistudio.google.com/apikey",
-    )
     model_name = st.selectbox(
         "Model Gemini",
         options=["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
@@ -122,27 +145,24 @@ if st.session_state.pdf_text:
         summarize_clicked = st.button("✨ Ringkas PDF Ini", use_container_width=True)
 
     if summarize_clicked:
-        if not api_key:
-            st.warning("Masukkan Google AI Studio API Key di sidebar terlebih dahulu.")
-        else:
-            with st.spinner("Membuat ringkasan..."):
-                try:
-                    text_to_send = st.session_state.pdf_text[:max_chars]
-                    prompt = (
-                        "Anda adalah asisten yang ahli merangkum dokumen. "
-                        "Buat ringkasan yang jelas, terstruktur, dan mudah dipahami "
-                        "dalam Bahasa Indonesia. Gunakan poin-poin untuk ide utama, "
-                        "dan sertakan kesimpulan singkat di akhir.\n\n"
-                        f"Berikut adalah isi dokumen PDF:\n\n{text_to_send}\n\n"
-                        "Tolong buatkan ringkasan dari dokumen di atas."
-                    )
-                    summary = call_gemini(api_key, model_name, prompt)
+        with st.spinner("Membuat ringkasan..."):
+            try:
+                text_to_send = st.session_state.pdf_text[:max_chars]
+                prompt = (
+                    "Anda adalah asisten yang ahli merangkum dokumen. "
+                    "Buat ringkasan yang jelas, terstruktur, dan mudah dipahami "
+                    "dalam Bahasa Indonesia. Gunakan poin-poin untuk ide utama, "
+                    "dan sertakan kesimpulan singkat di akhir.\n\n"
+                    f"Berikut adalah isi dokumen PDF:\n\n{text_to_send}\n\n"
+                    "Tolong buatkan ringkasan dari dokumen di atas."
+                )
+                summary = call_gemini(api_key, model_name, prompt)
 
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": f"**Ringkasan PDF '{st.session_state.pdf_name}':**\n\n{summary}"}
-                    )
-                except Exception as e:
-                    st.error(f"Terjadi kesalahan saat memanggil API: {e}")
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": f"**Ringkasan PDF '{st.session_state.pdf_name}':**\n\n{summary}"}
+                )
+            except Exception as e:
+                st.error(f"Terjadi kesalahan saat memanggil API: {e}")
 
     with st.expander("📖 Lihat teks mentah hasil ekstraksi PDF"):
         st.text_area("Isi PDF", st.session_state.pdf_text, height=200)
@@ -164,8 +184,6 @@ user_question = st.chat_input("Tanyakan sesuatu tentang isi PDF...")
 if user_question:
     if not st.session_state.pdf_text:
         st.warning("Silakan upload PDF terlebih dahulu.")
-    elif not api_key:
-        st.warning("Masukkan Google AI Studio API Key di sidebar terlebih dahulu.")
     else:
         st.session_state.messages.append({"role": "user", "content": user_question})
         with st.chat_message("user"):
