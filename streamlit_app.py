@@ -34,10 +34,9 @@ st.caption("Upload PDF, dapatkan ringkasan otomatis, dan tanya jawab tentang isi
 # ----------------------------
 with st.sidebar:
     st.header("⚙️ Pengaturan")
-    api_key = st.text_input(
-        "Anthropic API Key",
-        type="password",
-        help="Dapatkan API key di https://console.anthropic.com/",
+    import streamlit as st
+
+api_key = st.secrets["ANTHROPIC_API_KEY"]
     )
     model_name = st.selectbox(
         "Model",
