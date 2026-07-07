@@ -35,8 +35,7 @@ st.caption("Upload PDF, dapatkan ringkasan otomatis, dan tanya jawab tentang isi
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     import streamlit as st
-
-api_key = st.secrets["ANTHROPIC_API_KEY"]
+    api_key = st.secrets["ANTHROPIC_API_KEY"]
     )
     model_name = st.selectbox(
         "Model",
